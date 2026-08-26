@@ -1,133 +1,191 @@
 <!DOCTYPE html>
-<html lang="en-us">
-  <head>
-    <meta charset="utf-8">
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Unity Web Player | skadoge</title>
-    <link rel="shortcut icon" href="TemplateData/favicon.ico">
-    <link rel="stylesheet" href="TemplateData/style.css">
-  </head>
-  <body>
-    <div id="unity-container" class="unity-desktop">
-      <canvas id="unity-canvas" width=1280 height=720 tabindex="-1"></canvas>
-      <div id="unity-loading-bar">
-        <div id="unity-logo"></div>
-        <div id="unity-progress-bar-empty">
-          <div id="unity-progress-bar-full"></div>
-        </div>
-      </div>
-      <div id="unity-warning"> </div>
-      <div id="unity-footer">
-        <div id="unity-logo-title-footer"></div>
-        <div id="unity-fullscreen-button"></div>
-        <div id="unity-build-title">skadoge</div>
-      </div>
-    </div>
-    <script>
-      var canvas = document.querySelector("#unity-canvas");
+<html lang="en">
 
-      // Shows a temporary message banner/ribbon for a few seconds, or
-      // a permanent error message on top of the canvas if type=='error'.
-      // If type=='warning', a yellow highlight color is used.
-      // Modify or remove this function to customize the visually presented
-      // way that non-critical warnings and error messages are presented to the
-      // user.
-      function unityShowBanner(msg, type) {
-        var warningBanner = document.querySelector("#unity-warning");
-        function updateBannerVisibility() {
-          warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
-        }
-        var div = document.createElement('div');
-        div.innerHTML = msg;
-        warningBanner.appendChild(div);
-        if (type == 'error') div.style = 'background: red; padding: 10px;';
-        else {
-          if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
-          setTimeout(function() {
-            warningBanner.removeChild(div);
-            updateBannerVisibility();
-          }, 5000);
-        }
-        updateBannerVisibility();
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1a221c">
+  <title>skadoge</title>
+  <link rel="stylesheet" href="TemplateData/style.css">
+</head>
+
+<body>
+  <div id="player-shell">
+    <div id="game-frame">
+      <canvas id="unity-canvas" width="1920" height="1080" tabindex="-1"></canvas>
+      <button id="fullscreen-button" type="button" aria-label="Enter fullscreen" title="Fullscreen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+          <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+          <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+          <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="loading-overlay" aria-live="polite" aria-busy="true">
+    <div class="loading-panel">
+      <h1 class="loading-title">skadoge</h1>
+      <p class="loading-subtitle">Loading game...</p>
+      <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="progress-fill" class="progress-fill"></div>
+      </div>
+      <p id="progress-label" class="progress-label">0%</p>
+    </div>
+  </div>
+
+  <div id="rotate-overlay" aria-hidden="true">
+    <div class="rotate-icon" aria-hidden="true"></div>
+    <h2 class="rotate-title">Rotate your device</h2>
+    <p class="rotate-copy">skadoge plays in landscape. Turn your phone sideways to continue.</p>
+  </div>
+
+  <script src="Build/skadoge-game.loader.js"></script>
+  <script>
+    (function () {
+      var GAME_ASPECT = 16 / 9;
+      var canvas = document.querySelector("#unity-canvas");
+      var gameFrame = document.querySelector("#game-frame");
+      var loadingOverlay = document.querySelector("#loading-overlay");
+      var progressFill = document.querySelector("#progress-fill");
+      var progressLabel = document.querySelector("#progress-label");
+      var progressBar = document.querySelector(".progress-track");
+      var rotateOverlay = document.querySelector("#rotate-overlay");
+      var fullscreenButton = document.querySelector("#fullscreen-button");
+      var unityInstance = null;
+
+      var isMobileLike =
+        /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+        window.matchMedia("(pointer: coarse)").matches;
+
+      function getViewportSize() {
+        var safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-top")) || 0;
+        var safeRight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-right")) || 0;
+        var safeBottom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-bottom")) || 0;
+        var safeLeft = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-left")) || 0;
+
+        return {
+          width: Math.max(window.innerWidth - safeLeft - safeRight, 0),
+          height: Math.max(window.innerHeight - safeTop - safeBottom, 0)
+        };
       }
 
-      var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/skadoge-game.loader.js";
-      var config = {
+      function fitGameFrame() {
+        var viewport = getViewportSize();
+        var width = viewport.width;
+        var height = viewport.height;
+
+        if (width / height > GAME_ASPECT) {
+          height = viewport.height;
+          width = height * GAME_ASPECT;
+        } else {
+          width = viewport.width;
+          height = width / GAME_ASPECT;
+        }
+
+        gameFrame.style.width = width + "px";
+        gameFrame.style.height = height + "px";
+      }
+
+      function isPortraitMobile() {
+        if (!isMobileLike) {
+          return false;
+        }
+
+        return window.matchMedia("(orientation: portrait)").matches;
+      }
+
+      function updateOrientationGate() {
+        var portrait = isPortraitMobile();
+
+        document.body.classList.toggle("is-rotate-locked", portrait);
+        rotateOverlay.classList.toggle("is-visible", portrait);
+        rotateOverlay.setAttribute("aria-hidden", portrait ? "false" : "true");
+      }
+
+      function setProgress(value) {
+        var percent = Math.round(Math.min(Math.max(value, 0), 1) * 100);
+        progressFill.style.width = percent + "%";
+        progressLabel.textContent = percent + "%";
+        progressBar.setAttribute("aria-valuenow", String(percent));
+      }
+
+      function hideLoadingOverlay() {
+        loadingOverlay.classList.add("is-hidden");
+        loadingOverlay.setAttribute("aria-busy", "false");
+      }
+
+      function focusCanvas() {
+        window.requestAnimationFrame(function () {
+          canvas.focus({ preventScroll: true });
+        });
+      }
+
+      function showFullscreenButton() {
+        if (!document.fullscreenEnabled) {
+          return;
+        }
+
+        fullscreenButton.classList.add("is-visible");
+      }
+
+      fitGameFrame();
+      updateOrientationGate();
+
+      window.addEventListener("resize", function () {
+        fitGameFrame();
+        updateOrientationGate();
+      });
+
+      window.addEventListener("orientationchange", function () {
+        window.setTimeout(function () {
+          fitGameFrame();
+          updateOrientationGate();
+        }, 150);
+      });
+
+      window.matchMedia("(orientation: portrait)").addEventListener("change", updateOrientationGate);
+
+      fullscreenButton.addEventListener("click", function () {
+        if (!unityInstance) {
+          return;
+        }
+
+        unityInstance.SetFullscreen(1);
+      });
+
+      document.addEventListener("fullscreenchange", function () {
+        window.setTimeout(fitGameFrame, 50);
+      });
+
+      createUnityInstance(canvas, {
         arguments: [],
-        dataUrl: buildUrl + "/skadoge-game.data.unityweb",
-        frameworkUrl: buildUrl + "/skadoge-game.framework.js.unityweb",
-        codeUrl: buildUrl + "/skadoge-game.wasm.unityweb",
+        dataUrl: "Build/skadoge-game.data.unityweb",
+        frameworkUrl: "Build/skadoge-game.framework.js.unityweb",
+        codeUrl: "Build/skadoge-game.wasm.unityweb",
         streamingAssetsUrl: "StreamingAssets",
         companyName: "DefaultCompany",
         productName: "skadoge",
         productVersion: "1.0",
-        showBanner: unityShowBanner,
-        // errorHandler: function(err, url, line) {
-        //    alert("error " + err + " occurred at line " + line);
-        //    // Return 'true' if you handled this error and don't want Unity
-        //    // to process it further, 'false' otherwise.
-        //    return true;
-        // },
-      };
+        fullscreen: true
+      }, setProgress).then(function (instance) {
+        unityInstance = instance;
+        setProgress(1);
+        hideLoadingOverlay();
+        showFullscreenButton();
+        focusCanvas();
+      }).catch(function (message) {
+        progressLabel.textContent = "Failed to load game.";
+        alert(message);
+      });
+    })();
+  </script>
+</body>
 
-      // By default, Unity keeps WebGL canvas render target size matched with
-      // the DOM size of the canvas element (scaled by window.devicePixelRatio)
-      // Set this to false if you want to decouple this synchronization from
-      // happening inside the engine, and you would instead like to size up
-      // the canvas DOM size and WebGL render target sizes yourself.
-      // config.matchWebGLToCanvasSize = false;
-
-      // If you would like all file writes inside Unity Application.persistentDataPath
-      // directory to automatically persist so that the contents are remembered when
-      // the user revisits the site the next time, uncomment the following line:
-      // config.autoSyncPersistentDataPath = true;
-      // This autosyncing is currently not the default behavior to avoid regressing
-      // existing user projects that might rely on the earlier manual
-      // JS_FileSystem_Sync() behavior, but in future Unity version, this will be
-      // expected to change.
-
-      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        // Mobile device style: fill the whole browser client area with the game canvas:
-
-        var meta = document.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
-        document.getElementsByTagName('head')[0].appendChild(meta);
-        document.querySelector("#unity-container").className = "unity-mobile";
-        canvas.className = "unity-mobile";
-
-        // To lower canvas resolution on mobile devices to gain some
-        // performance, uncomment the following line:
-        // config.devicePixelRatio = 1;
-
-
-      } else {
-        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
-        canvas.style.width = "1280px";
-        canvas.style.height = "720px";
-      }
-
-      document.querySelector("#unity-loading-bar").style.display = "block";
-
-      var script = document.createElement("script");
-      script.src = loaderUrl;
-      script.onload = () => {
-        createUnityInstance(canvas, config, (progress) => {
-          document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
-              }).then((unityInstance) => {
-                document.querySelector("#unity-loading-bar").style.display = "none";
-                document.querySelector("#unity-fullscreen-button").onclick = () => {
-                  unityInstance.SetFullscreen(1);
-                };
-
-              }).catch((message) => {
-                alert(message);
-              });
-            };
-
-      document.body.appendChild(script);
-
-    </script>
-  </body>
 </html>
